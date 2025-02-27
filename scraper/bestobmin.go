@@ -1,61 +1,39 @@
 package scraper
 
 import (
-	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 )
 
-// GetBestObminRate отримує курс купівлі та продажу USD/UAH з BestObmin
-func GetBestObminRate() (buyRate, sellRate float64, err error) {
-	url := "https://bestobmin.com.ua/"
+// parseBestObmin parses the BestObmin HTML page and extracts the exchange rate
+func parseBestObmin(doc *goquery.Document) (float64, float64, error) {
+	buyStr := strings.TrimSpace(doc.Find("div.digit_bg.left_digit_bg p").First().Text())
+	sellStr := strings.TrimSpace(doc.Find("div.digit_bg.right_digit_bg p").First().Text())
 
-	// Завантажуємо сторінку
-	resp, err := http.Get(url)
+	if buyStr == "" || sellStr == "" {
+		return 0, 0, ErrNoDataFound
+	}
+
+	buy, err := strconv.ParseFloat(buyStr, 64)
 	if err != nil {
-		return 0, 0, fmt.Errorf("не вдалося отримати сторінку: %v", err)
-	}
-	defer resp.Body.Close()
-
-	// Перевіряємо статус відповіді
-	if resp.StatusCode != http.StatusOK {
-		return 0, 0, fmt.Errorf("неочікуваний статус відповіді: %d", resp.StatusCode)
+		return 0, 0, err
 	}
 
-	// Парсимо HTML
-	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	sell, err := strconv.ParseFloat(sellStr, 64)
 	if err != nil {
-		return 0, 0, fmt.Errorf("не вдалося розпарсити HTML: %v", err)
+		return 0, 0, err
 	}
 
-	// Шукаємо всі блоки з курсами для купівлі
-	buyRateElement := doc.Find("div.digit_bg.left_digit_bg p")
-	if buyRateElement.Length() == 0 {
-		return 0, 0, fmt.Errorf("не знайдено курс купівлі")
-	}
+	return buy, sell, nil
+}
 
-	// Отримуємо курс купівлі
-	buyRateStr := strings.TrimSpace(buyRateElement.Eq(0).Text())
-	buyRate, err = strconv.ParseFloat(buyRateStr, 64)
+// GetBestObminRate retrieves the USD/UAH exchange rate from BestObmin
+func GetBestObminRate() (float64, float64, error) {
+	doc, err := FetchHTML("https://bestobmin.com.ua/")
 	if err != nil {
-		return 0, 0, fmt.Errorf("помилка парсингу курсу купівлі: %v", err)
+		return 0, 0, err
 	}
-
-	// Шукаємо всі блоки з курсами для продажу
-	sellRateElement := doc.Find("div.digit_bg.right_digit_bg p")
-	if sellRateElement.Length() == 0 {
-		return 0, 0, fmt.Errorf("не знайдено курс продажу")
-	}
-
-	// Отримуємо курс продажу
-	sellRateStr := strings.TrimSpace(sellRateElement.Eq(0).Text())
-	sellRate, err = strconv.ParseFloat(sellRateStr, 64)
-	if err != nil {
-		return 0, 0, fmt.Errorf("помилка парсингу курсу продажу: %v", err)
-	}
-
-	return buyRate, sellRate, nil
+	return parseBestObmin(doc)
 }
